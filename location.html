@@ -86,7 +86,7 @@
       let logs = JSON.parse(localStorage.getItem("gpsLogs")) || [];
 
       // ✅ Check for revisit within 2 meters (0.002 km)
-      let isRevisit = logs.some(log => haversineDistance(log.lat, log.lon, lat, lon) < 0.0005);
+      let isRevisit = logs.some(log => haversineDistance(log.lat, log.lon, lat, lon) < 0.002);
 
       document.getElementById("status").innerHTML = isRevisit
         ? "📍 <span class='revisit'>Location Revisited!</span>"
