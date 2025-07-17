@@ -1,118 +1,160 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Table Locator</title>
+  <meta charset="UTF-8" />
+  <title>GPS Location with Revisit Check</title>
   <style>
     body {
       font-family: 'Segoe UI', sans-serif;
-      background: #f4f4f4;
+      background: #f0f8ff;
+      padding: 30px;
       text-align: center;
-      padding: 20px;
     }
-
-    .room {
-      width: 360px;
-      height: 360px;
+    .card {
       background: #fff;
-      margin: 20px auto;
-      position: relative;
-      border: 2px solid #aaa;
+      padding: 20px;
+      border-radius: 10px;
+      display: inline-block;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+      width: 90%;
+      max-width: 600px;
     }
-
-    .table {
-      width: 60px;
-      height: 60px;
-      background: #4CAF50;
+    button {
+      padding: 10px 20px;
+      margin: 10px;
+      background-color: #0077cc;
       color: white;
-      font-weight: bold;
-      border-radius: 50%;
-      line-height: 60px;
-      text-align: center;
-      position: absolute;
+      border: none;
+      border-radius: 6px;
       cursor: pointer;
     }
-
-    #output {
+    button.clear {
+      background-color: #cc0000;
+    }
+    #logList {
+      text-align: left;
       margin-top: 20px;
-      font-size: 1.2em;
-      color: #333;
+    }
+    .revisit {
+      color: green;
+      font-weight: bold;
     }
   </style>
 </head>
 <body>
-  <h2>Welcome to the Smart Table Locator</h2>
-  <p id="gps-status">Detecting your location...</p>
+  <div class="card">
+    <h2>📍 GPS Tracker with Revisit Detection</h2>
+    <p id="status">Fetching location...</p>
+    <div id="location"></div>
+    <button onclick="getLocation()">🔄 Refresh Location</button>
+    <button class="clear" onclick="clearHistory()">🗑 Clear History</button>
 
-  <div id="room" class="room" style="display: none;">
-    <div class="table" style="top: 20px; left: 20px;" onclick="selectTable(1)">1</div>
-    <div class="table" style="top: 20px; left: 140px;" onclick="selectTable(2)">2</div>
-    <div class="table" style="top: 20px; left: 260px;" onclick="selectTable(3)">3</div>
-
-    <div class="table" style="top: 140px; left: 20px;" onclick="selectTable(4)">4</div>
-    <div class="table" style="top: 140px; left: 140px;" onclick="selectTable(5)">5</div>
-    <div class="table" style="top: 140px; left: 260px;" onclick="selectTable(6)">6</div>
-
-    <div class="table" style="top: 260px; left: 20px;" onclick="selectTable(7)">7</div>
-    <div class="table" style="top: 260px; left: 140px;" onclick="selectTable(8)">8</div>
-    <div class="table" style="top: 260px; left: 260px;" onclick="selectTable(9)">9</div>
+    <div id="history">
+      <h3>📌 Location History</h3>
+      <div id="logList"></div>
+    </div>
   </div>
 
-  <p id="output"></p>
-
   <script>
-    function selectTable(num) {
-      document.getElementById("output").innerText = "✅ You selected Table " + num;
-    }
+    window.onload = function () {
+      getLocation();
+      displayHistory();
+    };
 
-    function checkLocation() {
+    function getLocation() {
+      document.getElementById("status").innerText = "Fetching location...";
+
       if (!navigator.geolocation) {
-        document.getElementById('gps-status').innerText = '❌ Geolocation not supported.';
+        document.getElementById("status").innerText = "❌ Geolocation not supported.";
         return;
       }
 
-      navigator.geolocation.getCurrentPosition(success, error);
+      navigator.geolocation.getCurrentPosition(handlePosition, showError, {
+        enableHighAccuracy: true,
+        timeout: 10000,
+      });
     }
 
-    function success(position) {
-      const lat = position.coords.latitude;
-      const long = position.coords.longitude;
+    function handlePosition(position) {
+      const lat = Number(position.coords.latitude.toFixed(6));
+      const lon = Number(position.coords.longitude.toFixed(6));
+      const accuracy = position.coords.accuracy;
+      const timestamp = new Date().toLocaleString();
 
-      // Your room coordinates - replace with your actual room's location
-      const roomLat = 12.9715987;
-      const roomLong = 77.5945627;
+      const current = { lat, lon, accuracy, time: timestamp };
 
-      const distance = getDistanceFromLatLonInMeters(lat, long, roomLat, roomLong);
+      let logs = JSON.parse(localStorage.getItem("gpsLogs")) || [];
 
-      if (distance < 20) {
-        document.getElementById('gps-status').innerText = "📍 You're in the room!";
-        document.getElementById('room').style.display = 'block';
-      } else {
-        document.getElementById('gps-status').innerText = "⚠️ You're not in the room area. Move closer.";
+      // ✅ Check for revisit within 2 meters (0.002 km)
+      let isRevisit = logs.some(log => haversineDistance(log.lat, log.lon, lat, lon) < 0.001);
+
+      document.getElementById("status").innerHTML = isRevisit
+        ? "📍 <span class='revisit'>Location Revisited!</span>"
+        : "✅ New Location Detected";
+
+      document.getElementById("location").innerHTML = `
+        Latitude: <strong>${lat}</strong><br>
+        Longitude: <strong>${lon}</strong><br>
+        Accuracy: <strong>${accuracy} m</strong><br>
+        <a href="https://maps.google.com/?q=${lat},${lon}" target="_blank">View on Google Maps</a><br>
+        Timestamp: ${timestamp}
+      `;
+
+      logs.unshift(current); // Add current to top of history
+      localStorage.setItem("gpsLogs", JSON.stringify(logs));
+      displayHistory();
+    }
+
+    function displayHistory() {
+      const logs = JSON.parse(localStorage.getItem("gpsLogs")) || [];
+      const logList = document.getElementById("logList");
+      logList.innerHTML = "";
+
+      if (logs.length === 0) {
+        logList.innerHTML = "<p>No location history yet.</p>";
+        return;
+      }
+
+      logs.forEach((log, index) => {
+        logList.innerHTML += `
+          <p>
+            <strong>Entry ${logs.length - index}</strong><br>
+            🕒 ${log.time}<br>
+            📌 Lat: ${log.lat}, Lng: ${log.lon}<br>
+            <a href="https://maps.google.com/?q=${log.lat},${log.lon}" target="_blank">Google Maps</a>
+          </p>
+        `;
+      });
+    }
+
+    function clearHistory() {
+      if (confirm("Are you sure you want to clear all location history?")) {
+        localStorage.removeItem("gpsLogs");
+        displayHistory();
+        document.getElementById("status").innerText = "🗑 Location history cleared.";
+        document.getElementById("location").innerHTML = "";
       }
     }
 
-    function error() {
-      document.getElementById('gps-status').innerText = '❌ Unable to retrieve location.';
+    function showError(error) {
+      document.getElementById("status").innerText = "❌ Unable to fetch location.";
     }
 
-    // Haversine formula to calculate distance between coordinates
-    function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
-      const R = 6371e3; // meters
-      const φ1 = lat1 * Math.PI / 180;
-      const φ2 = lat2 * Math.PI / 180;
-      const Δφ = (lat2 - lat1) * Math.PI / 180;
-      const Δλ = (lon2 - lon1) * Math.PI / 180;
+    function haversineDistance(lat1, lon1, lat2, lon2) {
+      const toRad = x => (x * Math.PI) / 180;
+      const R = 6371; // Earth's radius in km
 
-      const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-                Math.cos(φ1) * Math.cos(φ2) *
-                Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-      return R * c;
+      return R * c; // km
     }
-
-    // Run on load
-    checkLocation();
   </script>
 </body>
 </html>
